@@ -9,22 +9,24 @@ focalDistance = 1.915
 focalX = realWidth/2
 focalY = realWidth/2
 #pixel dimensions:
-
+pixelWidth = 640
+pixelHeight = 480
 
 def pixelToReal(x,y):
 	'''
 	return: 3D coordinates in cm of a point on the image plane
 	'''
-	cmx = realWidth * (x/640)
-	cmy = realHeight * (y/480)
-	return (1.915,cmx-focalX,cmy-focalY)
+	cmx = realWidth * (x/pixelWidth)
+	cmy = realHeight * (y/pixelHeight)
+	return (focalDistance,cmx-focalX,cmy-focalY)
 def realToPixel(cmx,cmy):
 	'''
 	return: 2D cordinates of a pixel from 3D coordinates in cm
 	'''
-	x = (cmx + focalX)*640/realWidth
-	y = (cmy + focalY)*480/realHeight
+	x = (cmx + focalX)*pixelWidth/realWidth
+	y = (cmy + focalY)*pixelHeight/realHeight
 	return (x,y)
+
 
 def match(img1,x,y,img2,linex1,liney1,linex2,liney2):
 	diff = 255
@@ -42,6 +44,102 @@ def match(img1,x,y,img2,linex1,liney1,linex2,liney2):
 
 
 #def realDistance()
+
+def getSearchLine(pixelX, pixelY):
+	firstFP = (0, 0, 0)
+	secondFP = (0, 9, 0)	
+		
+	# get initial line	
+	coord = pixelToReal(pixelX, pixelY)
+	
+	# get initial plane
+	initDirec = crossProduct(coord, secondFP)
+	initPoint = (0, 0, 0)
+
+	# get frame2 plane
+	frameDirec = (1, 0, 0)
+	framePoint = (focalDistance, 9, 0)
+
+	# get intersection of 2 planes
+	# line will be: <point[0], point[1]> + t<dir[0], dir[1]>
+	dir = crossProduct(initDirec, frameDirec)
+	dir = (dir[1], dir[2])
+	point = solveSystem(initDirec[1], initDirec[2], frameDirec[1], frameDirec[2], dotProduct(initPoint, initDirec)-initDirec[0]*focalDistance, dotProduct(framePoint, fraceDirec)-frameDirec[0]*focalDistance)
+	
+	# check for bounds of plane
+	# uninitialized point values are -10
+	realP1 = (-10, -10)
+	realP2 = (-10, -10)
+	
+	# check left wall for point
+	testY = solveX(point[0], point[1], dir[0], dir[1], 0 - focalX)
+	if(testY > 0 - focalY and testY < focalY):
+		realP1[0] = 0 - focalX
+		realP1[1] = testY
+	# check bottom wall for point
+	testX = solveY(point[0], point[1], dir[0], dir[1], 0 - focalY)
+	if(testX > 0 - focalX and testX < focalX):
+		if(realP1[0] == -10):
+			realP1[0] = testX
+			realP1[1] = 0 - focalY
+		else:
+			realP2[0] = testX
+			realP2[1] = 0 - focalY
+	# check right wall for point
+	testY = solveX(point[0], point[1], dir[0], dir[1], focalX)
+	if(testY > 0 - focalY and testY < focalY):
+		if(realP1[0] == -10):
+			realP1[0] = focalX
+			realP1[1] = testY
+		else:
+			realP2[0] = focalX
+			realP2[1] = testY
+	# check top wall for point
+	testX = solveY(point[0], point[1], dir[0], dir[1], focalY)
+	if(testX > 0 - focalX and testX < focalX):
+		realP2[0] = testX
+		realP2[1] = focalY
+
+	return (realToPixel(realP1), realToPixel(realP2))
+		
+def crossProduct(vec1, vec2):
+	x = vec1[1] * vec2[2] - vec1[2] * vec2[1]
+	y = vec1[2] * vec2[0] - vec1[0] * vec2[2]
+	z = vec1[0] * vec2[1] - vec1[1] * vec2[0]
+	return (x, y, z)
+
+def dotProduct(vec1, vec2):
+	x = vec1[0] * vec2[0]
+	y = vec1[1] * vec2[1]
+	z = vec1[2] * vec2[2]
+	return x + y + z
+
+'''
+System of the form:
+Ax + By = E
+Cx + Dy = F
+returns solution (x, y) as tuple
+'''
+def solveSystem(A, B, C, D, E, F):	
+	inverseCoefficient = (1 / (A*D - B*C))
+	xSol = inverseCoefficient * (A*E - B*F)
+	ySol = inverseCoefficient * (D*F - C*E)
+	return(xSol, ySol)
+
+'''
+solveX solves for y
+solveY solves for x
+eq of form:
+<P1, P2> + t<D1, D2> = <x, y>
+'''
+def solveX(P1, P2, D1, D2, x):
+	t = (x - P1) / D1
+	return P2 + t * D2
+
+def solveY(P1, P2, D1, D2, y):
+	t = (y - P2) / D2
+	return P1 + t * D1
+
 
 def main():
 	cap0 = cv2.VideoCapture(0)
