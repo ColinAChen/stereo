@@ -3,6 +3,7 @@ import matplotlib.pyplot as plt
 from skimage.draw import line
 import numpy as np
 import PIL
+import math
 #Real world cm height/width
 realWidth = .86808
 realHeight = .65106
@@ -72,8 +73,8 @@ def getSearchLine(pixelX, pixelY):
 	
 	# check for bounds of plane
 	# uninitialized point values are -10
-	realP1 = (-10, -10)
-	realP2 = (-10, -10)
+	realP1 = [-10, -10]
+	realP2 = [-10, -10]
 	
 	# check left wall for point
 	testY = solveX(point[0], point[1], dir[0], dir[1], 0 - focalX)
@@ -81,7 +82,10 @@ def getSearchLine(pixelX, pixelY):
 		realP1[0] = 0 - focalX
 		realP1[1] = testY
 	# check bottom wall for point
-	testX = solveY(point[0], point[1], dir[0], dir[1], 0 - focalY)
+	if (dir[1] != 0):
+		testX = solveY(point[0], point[1], dir[0], dir[1], 0 - focalY)
+	else:
+		testX = -10
 	if(testX > 0 - focalX and testX < focalX):
 		if(realP1[0] == -10):
 			realP1[0] = testX
@@ -99,12 +103,15 @@ def getSearchLine(pixelX, pixelY):
 			realP2[0] = focalX
 			realP2[1] = testY
 	# check top wall for point
-	testX = solveY(point[0], point[1], dir[0], dir[1], focalY)
+	if (dir[1] != 0):
+		testX = solveY(point[0], point[1], dir[0], dir[1], focalY)
+	else:
+		testX = -10
 	if(testX > 0 - focalX and testX < focalX):
 		realP2[0] = testX
 		realP2[1] = focalY
 
-	return (realToPixel(realP1), realToPixel(realP2))
+	return (realToPixel(realP1[0],realP1[1]), realToPixel(realP2[0],realP2[1]))
 		
 def crossProduct(vec1, vec2):
 	x = vec1[1] * vec2[2] - vec1[2] * vec2[1]
@@ -144,7 +151,29 @@ def solveY(P1, P2, D1, D2, y):
 	t = (y - P2) / D2
 	return P1 + t * D1
 
+def dist(a,b,c,d,e,f):
+	return math.sqrt((int(a)-int(b))**2 + (int(c)-int(d))**2 + (int(e)-int(f))**2)
 
+def areaDist(area1, area2):
+	'''
+	area1: list of lists or tuples
+	area2: list of lists or tuples
+	return: distance between
+	'''
+	distance=0
+	for i, row in enumerate(area1):
+		distance+=listDiff(row,area2[i])
+	return distance
+def listDiff(list1,list2):
+	'''
+	list1: list or tuple of colors with three channels
+	list2: list of tupe or colors with three channels
+	return: distance between list of colors
+	'''
+	distance = 0
+	for i, point in enumerate(list1):
+		distance += dist(point[0],list2[i][0],point[1],list2[i][1],point[2],list[i][2])
+	return distance
 def main():
 	cap0 = cv2.VideoCapture(0)
 	cap1 = cv2.VideoCapture(1)
@@ -157,7 +186,10 @@ def main():
 	#print(cap0.get(3))
 	#print(cap0.get(4))
 	#stereo = cv2.StereoBM_create(0,21)
+	thresh = 10
+	point=[300,400]
 	while(True):
+
 		# Capture frame-by-frame
 		#ret, frame = cap.read()
 		ret0, frame0 = cap0.read()
@@ -165,11 +197,48 @@ def main():
 		# Our operations on the frame come here
 		gray0 = cv2.cvtColor(frame0, cv2.COLOR_BGR2GRAY)
 		gray1 = cv2.cvtColor(frame1, cv2.COLOR_BGR2GRAY)
-		bounds = getSearchLine(5,5)
-		rr,cc = line(bounds[0][0],bounds[0][1],bounds[1][0],bounds[1][1])
-		gray1[rr][cc] = 255
-		cv2.imshow('line',gray1)
+		bounds = getSearchLine(point[0],point[1])
+		print(bounds)
+		#frame0[point[0]][point[1]] = (255,255,255)
+		rr,cc = line(round(bounds[0][0]),round(bounds[0][1]),round(bounds[1][0]-1),round(bounds[1][1]))
+		minDist = 255
+		minRow = -10
+		minCol = -10
+		for i,row in enumerate(rr):
+			#print(row,cc[i])
+			#frame1[cc[i]][row] = (255,0,0)
 
+			#print(dist(frame0[point[0]][point[1]][0], frame1[cc[i]][row][0],frame0[point[0]][point[1]][1], frame1[cc[i]][row][1],frame0[point[0]][point[1]][2], frame1[cc[i]][row][2]))
+			if (dist(frame0[point[0]][point[1]][0], frame1[cc[i]][row][0],frame0[point[0]][point[1]][1], frame1[cc[i]][row][1],frame0[point[0]][point[1]][2], frame1[cc[i]][row][2]) < minDist):
+				#print('dist match found!')
+				#print(dist(frame0[point[0]][point[1]][0], frame1[cc[i]][row][0],frame0[point[0]][point[1]][1], frame1[cc[i]][row][1],frame0[point[0]][point[1]][2], frame1[cc[i]][row][2]))
+				minDist = dist(frame0[point[0]][point[1]][0], frame1[cc[i]][row][0],frame0[point[0]][point[1]][1], frame1[cc[i]][row][1],frame0[point[0]][point[1]][2], frame1[cc[i]][row][2])
+				minRow = row
+				minCol = cc[i]
+				
+				#print(cc[i])
+				#print([row])
+		print(minRow)
+		print(minCol)
+		frame1[minCol][minRow] = (255,255,255)
+		frame0[point[0]][point[1]] = (255,255,255)
+		#print(rr)
+			#if (abs(frame0[point[0]][point[1]][0] - frame1[cc[i]][row][0]) < thresh and abs(frame0[point[0]][point[1]][1] - frame1[cc[i]][row][1]) < thresh and abs(frame0[point[0]][point[1]][2] - frame1[cc[i]][row][2]) < thresh):
+			#	print('match found!')
+			#	frame1[cc[i]][row] = (255,255,255)
+		#print(rr)
+		#print(cc)
+		#show = np.asarray(gray1)
+		#print(show)
+		#print(len(show))
+		#show[rr][cc] = 255
+		#gray1[rr][cc] = 255
+		
+		cv2.imshow('point',frame0)
+		cv2.imshow('line', frame1)
+
+		#for row in range(0,480,4):
+		#	for col in range(0,640,4):
 
 
 		#orb = cv2.ORB_create()
