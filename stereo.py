@@ -1,6 +1,8 @@
 import cv2
 import matplotlib.pyplot as plt
 from skimage.draw import line
+import numpy as np
+import PIL
 #Real world cm height/width
 realWidth = .86808
 realHeight = .65106
@@ -64,7 +66,7 @@ def getSearchLine(pixelX, pixelY):
 	# line will be: <point[0], point[1]> + t<dir[0], dir[1]>
 	dir = crossProduct(initDirec, frameDirec)
 	dir = (dir[1], dir[2])
-	point = solveSystem(initDirec[1], initDirec[2], frameDirec[1], frameDirec[2], dotProduct(initPoint, initDirec)-initDirec[0]*focalDistance, dotProduct(framePoint, fraceDirec)-frameDirec[0]*focalDistance)
+	point = solveSystem(initDirec[1], initDirec[2], frameDirec[1], frameDirec[2], dotProduct(initPoint, initDirec)-initDirec[0]*focalDistance, dotProduct(framePoint, frameDirec)-frameDirec[0]*focalDistance)
 	
 	# check for bounds of plane
 	# uninitialized point values are -10
@@ -161,10 +163,10 @@ def main():
 		# Our operations on the frame come here
 		gray0 = cv2.cvtColor(frame0, cv2.COLOR_BGR2GRAY)
 		gray1 = cv2.cvtColor(frame1, cv2.COLOR_BGR2GRAY)
-		for row in gray0:
-			for col in row:
-				matchX, matchY = match(row,col)
-
+		bounds = getSearchLine(5,5)
+		rr,cc = line(bounds[0][0],bounds[0][1],bounds[1][0],bounds[1][1])
+		gray1[rr][cc] = 255
+		cv2.imshow('line',gray1)
 
 
 
