@@ -44,7 +44,7 @@ def getSearchLine(pixelX, pixelY):
 	# line will be: <point[0], point[1]> + t<dir[0], dir[1]>
 	dir = crossProduct(initDirec, frameDirec)
 	dir = (dir[1], dir[2])
-	point = solveSystem(initDirec[1], initDirec[2], frameDirec[1], frameDirec[2], dotProduct(initPoint, initDirec)-initDirec[0]*focalDistance, dotProduct(framePoint, fraceDirec)-frameDirec[0]*focalDistance)
+	point = (0, (dotProduct(initPoint, initDirec)-initDirec[0]*focalDistance) / initDirec[2])
 	
 	# check for bounds of plane
 	# uninitialized point values are -10
