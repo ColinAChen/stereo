@@ -268,10 +268,12 @@ def main():
 				#temp = 1000
 				#print(sum(np.subtract(gray0[row:row+20,col:col+20],gray1[row:row+20,col:col+20])))
 				for slideCol in range(0,620):
-					if (sum(sum(abs(np.subtract(gray0[row:row+20,col:col+20],gray1[row:row+20,col:col+20])))) < minPoint):
-						minPoint = sum(sum(abs(np.subtract(gray0[row:row+20,col:col+20],gray1[row:row+20,col:col+20]))))
+					if (sum(sum(abs(np.subtract(gray0[row:row+20,col:col+20],gray1[row:row+20,slideCol:slideCol+20])))) < minPoint):
+						minPoint = sum(sum(abs(np.subtract(gray0[row:row+20,col:col+20],gray1[row:row+20,slideCol:slideCol+20]))))
 						minCol = slideCol
-
+				#print('column', col)
+				#print('minPoint',minPoint)
+				#print('minCol', minCol)
 				gray0[row:row+20,col:col+20] = (row + col) * 255 / 1120
 				gray1[row:row+20,minCol:minCol+20] = (row + col) * 255 / 1120
 
