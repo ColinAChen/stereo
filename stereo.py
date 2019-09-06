@@ -7,29 +7,38 @@ import math
 #Real world cm height/width
 realWidth = .86808
 realHeight = .65106
-#focal distance
-focalDistance = 1.915
+# distance between focal point and frame
+focalDistance = 0.625 #1.915
 focalX = realWidth/2
-focalY = realWidth/2
+focalY = realHeight/2
+# distance between focal points
+frameDistance = 9
 #pixel dimensions:
 pixelWidth = 640
 pixelHeight = 480
 
-def pixelToReal(x,y):
-	'''
-	return: 3D coordinates in cm of a point on the image plane
-	'''
-	cmx = realWidth * (x/pixelWidth)
-	cmy = realHeight * (y/pixelHeight)
-	return (focalDistance,cmx-focalX,cmy-focalY)
+def pixelToReal(row,col):
+	# return: 3D coordinates in cm of a point on the image plane
+	cmx = realWidth * (col/pixelWidth)
+	cmy = realHeight * (row/pixelHeight)
+	return (focalDistance,cmx-focalX,focalY-cmy)
 def realToPixel(cmx,cmy):
-	'''
-	return: 2D cordinates of a pixel from 3D coordinates in cm
-	'''
-	x = (cmx + focalX)*pixelWidth/realWidth
-	y = (cmy + focalY)*pixelHeight/realHeight
-	return (x,y)
+	# return: 2D cordinates of a pixel from 3D coordinates in cm
+	col = (cmx + focalX)*pixelWidth/realWidth
+	row = (focalY - cmy)*pixelHeight/realHeight
+	return (round(row), round(col))
 
+def pixelToRealFrame2(row, col):
+	# return 3D coordinates in cm of point on second image plane
+	cmx = realWidth * (col/pixelWidth)
+	cmy = realHeight * (row/pixelHeight)
+	return (focalDistance,cmx-focalX+frameDistance,focalY-cmy)
+
+def realToPixelFrame2(cmx,cmy):
+	# return: 2D cordinates on frame2 of a pixel from 3D coordinates in cm
+	col = (cmx + focalX-frameDistance)*pixelWidth/realWidth
+	row = (focalY - cmy)*pixelHeight/realHeight
+	return (round(row), round(col))
 
 def match(img1,x,y,img2,linex1,liney1,linex2,liney2):
 	diff = 255
@@ -44,13 +53,43 @@ def match(img1,x,y,img2,linex1,liney1,linex2,liney2):
 				matchCol = col
 	return matchRow,matchCol
 
+def getDist(a, b):
+	return math.sqrt((a[0]-b[0])**2 + (a[1]-b[1])**2 + (a[2]-b[2])**2)
 
+firstFP = (0, 0, 0)
+secondFP = (0, frameDistance, 0)	
 
-#def realDistance()
+def realDistance(firstR, firstC, secR, secC):
+	# get first vector
+	firstPt = pixelToReal(firstR, firstC)
+	firstVec = (firstPt[0]-firstFP[0], firstPt[1]-firstFP[1], firstPt[2]-firstFP[2])
+	
+	# get second vector
+	secPt = pixelToRealFrame2(secR, secC)
+	secVec = (secPt[0]-secondFP[0], secPt[1]-secondFP[1], secPt[2]-secondFP[2])
 
+	'''
+	solve for intersections of eqs:
+	<firstFP[0], firstFP[1], firstFP[2]> + t1<firstVec[0], firstVec[1], firstVec[2]>
+	<secondFP[0], secondFP[1], secondFP[2]> + t2<secVec[0], secVec[1], secVec[2]>
+	'''
+	# solve system of eqs for t1 and t2	
+	a = [firstVec[0], -1*secVec[0]]
+	b = [firstVec[1], -1*secVec[1]]
+	c = [firstVec[2], -1*secVec[2]]
+	coefficients = np.array([a, b, c])
+	constants = np.array([secondFP[0]-firstFP[0], secondFP[1]-firstFP[1], secondFP[2]-firstFP[2]])
+	ans = np.linalg.lstsq(coefficients, constants)
+
+	x = firstFP[0] + ans[0]*firstVec[0]
+	y = firstFP[1] + ans[0]*firstVec[1]
+	z = firstFP[2] + ans[0]*firstVec[2]
+
+	return getDist((x[0], y[0], z[0]), firstFP)
+	
+# input is pixel coordinates in frame1
+# output is pixel coordinates in frame2
 def getSearchLine(pixelX, pixelY):
-	firstFP = (0, 0, 0)
-	secondFP = (0, 9, 0)	
 		
 	# get initial line	
 	coord = pixelToReal(pixelX, pixelY)
@@ -111,7 +150,7 @@ def getSearchLine(pixelX, pixelY):
 		realP2[0] = testX
 		realP2[1] = focalY
 
-	return (realToPixel(realP1[0],realP1[1]), realToPixel(realP2[0],realP2[1]))
+	return (realToPixelFrame2(realP1[0],realP1[1]), realToPixel(realP2[0],realP2[1]))
 		
 def crossProduct(vec1, vec2):
 	x = vec1[1] * vec2[2] - vec1[2] * vec2[1]
