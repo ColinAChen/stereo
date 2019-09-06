@@ -191,6 +191,8 @@ def solveY(P1, P2, D1, D2, y):
 	return P1 + t * D1
 
 def dist(a,b,c,d,e,f):
+	#print('dist')
+	#print(a,b,c,d,e,f)
 	return math.sqrt((int(a)-int(b))**2 + (int(c)-int(d))**2 + (int(e)-int(f))**2)
 
 def areaDist(area1, area2):
@@ -201,18 +203,26 @@ def areaDist(area1, area2):
 	'''
 	distance=0
 	for i, row in enumerate(area1):
-		distance+=listDiff(row,area2[i])
-	return distance
-def listDiff(list1,list2):
+		distance+=listDist(row,area2[i])
+	return distance/len(area1)
+def listDist(list1,list2):
 	'''
 	list1: list or tuple of colors with three channels
 	list2: list of tupe or colors with three channels
 	return: distance between list of colors
 	'''
+
 	distance = 0
 	for i, point in enumerate(list1):
-		distance += dist(point[0],list2[i][0],point[1],list2[i][1],point[2],list[i][2])
-	return distance
+		distance += dist(point[0],list2[i][0],point[1],list2[i][1],point[2],list2[i][2])
+	return distance/len(list1)
+def diffArray(twoD):
+	'''
+	twoD: list of list
+	return: difference array, top left corner's value is the same. All other values are their corresponding pixel's relationship to the to left anchor pixel.
+	'''
+	pass
+
 def main():
 	cap0 = cv2.VideoCapture(0)
 	cap1 = cv2.VideoCapture(1)
@@ -226,9 +236,13 @@ def main():
 	#print(cap0.get(4))
 	#stereo = cv2.StereoBM_create(0,21)
 	thresh = 10
-	point=[300,400]
+	point=[240,260]
+	saved = False
 	while(True):
-
+		if (not saved):
+			cv2.imwrite('frame0.jpg',frame0)
+			cv2.imwrite('frame1.jpg',frame1)
+			saved=True
 		# Capture frame-by-frame
 		#ret, frame = cap.read()
 		ret0, frame0 = cap0.read()
@@ -236,13 +250,14 @@ def main():
 		# Our operations on the frame come here
 		gray0 = cv2.cvtColor(frame0, cv2.COLOR_BGR2GRAY)
 		gray1 = cv2.cvtColor(frame1, cv2.COLOR_BGR2GRAY)
-		bounds = getSearchLine(point[0],point[1])
-		print(bounds)
+		#bounds = getSearchLine(point[0],point[1])
+		#print(bounds)
 		#frame0[point[0]][point[1]] = (255,255,255)
-		rr,cc = line(round(bounds[0][0]),round(bounds[0][1]),round(bounds[1][0]-1),round(bounds[1][1]))
+		#rr,cc = line(round(bounds[0][0]),round(bounds[0][1]),round(bounds[1][0]-1),round(bounds[1][1]))
 		minDist = 255
 		minRow = -10
 		minCol = -10
+		'''
 		for i,row in enumerate(rr):
 			#print(row,cc[i])
 			#frame1[cc[i]][row] = (255,0,0)
@@ -261,6 +276,7 @@ def main():
 		print(minCol)
 		frame1[minCol][minRow] = (255,255,255)
 		frame0[point[0]][point[1]] = (255,255,255)
+		'''
 		#print(rr)
 			#if (abs(frame0[point[0]][point[1]][0] - frame1[cc[i]][row][0]) < thresh and abs(frame0[point[0]][point[1]][1] - frame1[cc[i]][row][1]) < thresh and abs(frame0[point[0]][point[1]][2] - frame1[cc[i]][row][2]) < thresh):
 			#	print('match found!')
@@ -272,12 +288,40 @@ def main():
 		#print(len(show))
 		#show[rr][cc] = 255
 		#gray1[rr][cc] = 255
-		
-		cv2.imshow('point',frame0)
-		cv2.imshow('line', frame1)
 
 		#for row in range(0,480,4):
+		#	minPoint = 1000
+		#	minCol = -10
 		#	for col in range(0,640,4):
+		#		if (areaDist(frame0[row:row+4][col:col+4],frame1[[row:row+4][col:col+4]]) < minPoint):
+		#			minPoint = areaDist(frame0[row:row+4][col:col+4],frame1[[row:row+4][col:col+4]])
+		#			minCol = col
+		#	frame1[]
+		#if (areaDist(frame0[point[0]:point[0]+20,point[1]:point[1]+20],frame1[point[0]:point[0]+20,col:col+20]) < minPoint):
+		#	minPoint = areaDist(frame0[point[0]:point[0]+20,col:col+20],frame1[point[0]:point[0]+20,col:col+20])
+		#	minCol = col
+		for row in range(0,480,40):
+			for col in range(0,640,40):
+				minPoint = 10000000000
+				minCol = -10
+				#temp = 1000
+				#print(sum(np.subtract(gray0[row:row+20,col:col+20],gray1[row:row+20,col:col+20])))
+				for slideCol in range(0,620):
+					if (sum(sum(abs(np.subtract(gray0[row:row+20,col:col+20],gray1[row:row+20,slideCol:slideCol+20])))) < minPoint):
+						minPoint = sum(sum(abs(np.subtract(gray0[row:row+20,col:col+20],gray1[row:row+20,slideCol:slideCol+20]))))
+						minCol = slideCol
+				#print('column', col)
+				#print('minPoint',minPoint)
+				#print('minCol', minCol)
+				gray0[row:row+20,col:col+20] = (row + col) * 255 / 1120
+				gray1[row:row+20,minCol:minCol+20] = (row + col) * 255 / 1120
+
+
+		#gray1[point[0]:point[0]+10,point[1]-12:point[1]+10-12] = 255
+		cv2.imshow('point',gray0)
+		cv2.imshow('line', gray1)
+
+		
 
 
 		#orb = cv2.ORB_create()
