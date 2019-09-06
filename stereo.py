@@ -177,6 +177,13 @@ def listDist(list1,list2):
 	for i, point in enumerate(list1):
 		distance += dist(point[0],list2[i][0],point[1],list2[i][1],point[2],list2[i][2])
 	return distance/len(list1)
+def diffArray(twoD):
+	'''
+	twoD: list of list
+	return: difference array, top left corner's value is the same. All other values are their corresponding pixel's relationship to the to left anchor pixel.
+	'''
+	pass
+
 def main():
 	cap0 = cv2.VideoCapture(0)
 	cap1 = cv2.VideoCapture(1)
@@ -190,7 +197,7 @@ def main():
 	#print(cap0.get(4))
 	#stereo = cv2.StereoBM_create(0,21)
 	thresh = 10
-	point=[200,200]
+	point=[240,260]
 	saved = False
 	while(True):
 		if (not saved):
@@ -251,39 +258,27 @@ def main():
 		#			minPoint = areaDist(frame0[row:row+4][col:col+4],frame1[[row:row+4][col:col+4]])
 		#			minCol = col
 		#	frame1[]
-		minPoint = 10000000000
-		minCol = -10
-		temp = 1000
-		#print(frame0[point[0]:point[0]+4,point[1]:point[1]+4])
-		#cv2.imshow('box',frame0[point[0]:point[0]+4,point[1]:point[1]+4])
-		for col in range(0,630):
-			temp = 1000
-			if (areaDist(frame0[point[0]:point[0]+6,point[1]:point[1]+6],frame1[point[0]:point[0]+6,col:col+6]) < minPoint):
-				minPoint = areaDist(frame0[point[0]:point[0]+6,col:col+6],frame1[point[0]:point[0]+6,col:col+6])
-				minCol = col
-			#print(gray0[point[0]:point[0]+4,point[1]:point[1]+4] - gray1[point[0]:point[0]+4,col:col+4])
-			#for row in gray0[point[0]:point[0]+10,point[1]:point[1]+10] - gray1[point[0]:point[0]+10,col:col+10]:
-				#print('row!')
-			#	temp += sum ([abs(x) for x in row])
-			#if (temp < minPoint):
-			#	minPoint = temp
-			#	minCol = col
-		#print(minPoint)
-		#print(minCol)
-		#print(minPoint)
-		#print('frame0')
-		#print(gray0[point[0]:point[0]+10,point[1]:point[1]+10])
-		#print('frame1')
-		#print(gray1[point[0]:point[0]+10,minCol:minCol+10])
-		#print('fram1blue')
-		#print(gray1[point[0]:point[0]+10,point[1]-12:point[1]+10-12])
-		frame0[point[0]:point[0]+10,point[1]:point[1]+10] = 255,0,0
-		frame1[point[0]:point[0]+10,minCol:minCol+10] = 0,0,255
+		#if (areaDist(frame0[point[0]:point[0]+20,point[1]:point[1]+20],frame1[point[0]:point[0]+20,col:col+20]) < minPoint):
+		#	minPoint = areaDist(frame0[point[0]:point[0]+20,col:col+20],frame1[point[0]:point[0]+20,col:col+20])
+		#	minCol = col
+		for row in range(0,480,40):
+			for col in range(0,640,40):
+				minPoint = 10000000000
+				minCol = -10
+				#temp = 1000
+				#print(sum(np.subtract(gray0[row:row+20,col:col+20],gray1[row:row+20,col:col+20])))
+				for slideCol in range(0,620):
+					if (sum(sum(abs(np.subtract(gray0[row:row+20,col:col+20],gray1[row:row+20,col:col+20])))) < minPoint):
+						minPoint = sum(sum(abs(np.subtract(gray0[row:row+20,col:col+20],gray1[row:row+20,col:col+20]))))
+						minCol = slideCol
+
+				gray0[row:row+20,col:col+20] = (row + col) * 255 / 1120
+				gray1[row:row+20,minCol:minCol+20] = (row + col) * 255 / 1120
 
 
 		#gray1[point[0]:point[0]+10,point[1]-12:point[1]+10-12] = 255
-		cv2.imshow('point',frame0)
-		cv2.imshow('line', frame1)
+		cv2.imshow('point',gray0)
+		cv2.imshow('line', gray1)
 
 		
 
