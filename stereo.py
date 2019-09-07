@@ -4,32 +4,68 @@ from skimage.draw import line
 import numpy as np
 import PIL
 import math
+import argparse
+import json
+
 #Real world cm height/width
 realWidth = .86808
 realHeight = .65106
-#focal distance
-focalDistance = 1.915
+# distance between focal point and frame
+focalDistance = 0.625 #1.915
 focalX = realWidth/2
-focalY = realWidth/2
+focalY = realHeight/2
+# distance between focal points
+frameDistance = 9
 #pixel dimensions:
 pixelWidth = 640
 pixelHeight = 480
+class CommandLine:
+	def __init__(self, inOpts=None) :
+		'''
+		Implement a parser to interpret the command line argv string using argparse.
+		'''
 
-def pixelToReal(x,y):
-	'''
-	return: 3D coordinates in cm of a point on the image plane
-	'''
-	cmx = realWidth * (x/pixelWidth)
-	cmy = realHeight * (y/pixelHeight)
-	return (focalDistance,cmx-focalX,cmy-focalY)
+		import argparse
+		self.parser = argparse.ArgumentParser(description = 'Choose to view real time video or saved images', 
+												epilog = 'Stereo cameras to estimate depth', 
+												add_help = True, #default is True 
+												prefix_chars = '-', 
+												usage = '%(prog)s'
+												)
+		
+		self.parser.add_argument('-video', action='store_true')	
+		self.parser.add_argument('-all', action='store_true')
+		self.parser.add_argument('-load', action='store_true')
+		self.parser.add_argument('-save', action='store_true')
+		self.parser.add_argument('-view', action='store_true')
+
+		if inOpts is None :
+			self.args = self.parser.parse_args()
+		else :
+			self.args = self.parser.parse_args(inOpts)
+
+def pixelToReal(row,col):
+	# return: 3D coordinates in cm of a point on the image plane
+	cmx = realWidth * (col/pixelWidth)
+	cmy = realHeight * (row/pixelHeight)
+	return (focalDistance,cmx-focalX,focalY-cmy)
 def realToPixel(cmx,cmy):
-	'''
-	return: 2D cordinates of a pixel from 3D coordinates in cm
-	'''
-	x = (cmx + focalX)*pixelWidth/realWidth
-	y = (cmy + focalY)*pixelHeight/realHeight
-	return (x,y)
+	# return: 2D cordinates of a pixel from 3D coordinates in cm
+	col = (cmx + focalX)*pixelWidth/realWidth
+	row = (focalY - cmy)*pixelHeight/realHeight
+	return (round(row), round(col))
 
+def pixelToRealFrame2(row, col):
+	# return 3D coordinates in cm of point on second image plane
+	cmx = realWidth * (col/pixelWidth)
+	cmy = realHeight * (row/pixelHeight)
+	return (focalDistance,cmx-focalX+frameDistance,focalY-cmy)
+
+def realToPixelFrame2(cmx,cmy):
+	# return: 2D cordinates on frame2 of a pixel from 3D coordinates in cm
+	col = (cmx + focalX-frameDistance)*pixelWidth/realWidth
+	row = (focalY - cmy)*pixelHeight/realHeight
+	return (round(row), round(col))
 
 def match(img1,x,y,img2,linex1,liney1,linex2,liney2):
 	diff = 255
@@ -44,13 +80,43 @@ def match(img1,x,y,img2,linex1,liney1,linex2,liney2):
 				matchCol = col
 	return matchRow,matchCol
 
+def getDist(a, b):
+	return math.sqrt((a[0]-b[0])**2 + (a[1]-b[1])**2 + (a[2]-b[2])**2)
 
+firstFP = (0, 0, 0)
+secondFP = (0, frameDistance, 0)	
 
-#def realDistance()
+def realDistance(firstR, firstC, secR, secC):
+	# get first vector
+	firstPt = pixelToReal(firstR, firstC)
+	firstVec = (firstPt[0]-firstFP[0], firstPt[1]-firstFP[1], firstPt[2]-firstFP[2])
+	
+	# get second vector
+	secPt = pixelToRealFrame2(secR, secC)
+	secVec = (secPt[0]-secondFP[0], secPt[1]-secondFP[1], secPt[2]-secondFP[2])
 
+	'''
+	solve for intersections of eqs:
+	<firstFP[0], firstFP[1], firstFP[2]> + t1<firstVec[0], firstVec[1], firstVec[2]>
+	<secondFP[0], secondFP[1], secondFP[2]> + t2<secVec[0], secVec[1], secVec[2]>
+	'''
+	# solve system of eqs for t1 and t2	
+	a = [firstVec[0], -1*secVec[0]]
+	b = [firstVec[1], -1*secVec[1]]
+	c = [firstVec[2], -1*secVec[2]]
+	coefficients = np.array([a, b, c])
+	constants = np.array([secondFP[0]-firstFP[0], secondFP[1]-firstFP[1], secondFP[2]-firstFP[2]])
+	ans = np.linalg.lstsq(coefficients, constants)
+
+	x = firstFP[0] + ans[0]*firstVec[0]
+	y = firstFP[1] + ans[0]*firstVec[1]
+	z = firstFP[2] + ans[0]*firstVec[2]
+
+	return getDist((x[0], y[0], z[0]), firstFP)
+	
+# input is pixel coordinates in frame1
+# output is pixel coordinates in frame2
 def getSearchLine(pixelX, pixelY):
-	firstFP = (0, 0, 0)
-	secondFP = (0, 9, 0)	
 		
 	# get initial line	
 	coord = pixelToReal(pixelX, pixelY)
@@ -111,7 +177,7 @@ def getSearchLine(pixelX, pixelY):
 		realP2[0] = testX
 		realP2[1] = focalY
 
-	return (realToPixel(realP1[0],realP1[1]), realToPixel(realP2[0],realP2[1]))
+	return (realToPixelFrame2(realP1[0],realP1[1]), realToPixel(realP2[0],realP2[1]))
 		
 def crossProduct(vec1, vec2):
 	x = vec1[1] * vec2[2] - vec1[2] * vec2[1]
@@ -183,142 +249,246 @@ def diffArray(twoD):
 	return: difference array, top left corner's value is the same. All other values are their corresponding pixel's relationship to the to left anchor pixel.
 	'''
 	pass
-
-def main():
-	cap0 = cv2.VideoCapture(0)
-	cap1 = cv2.VideoCapture(1)
-	ret0, frame0 = cap0.read()
-	assert ret0 # succeeds
-	ret1, frame1 = cap1.read()
-	assert ret1 # fails?!
-	#cap0.set(3,1920)
-	#cap0.set(4,1080)
-	#print(cap0.get(3))
-	#print(cap0.get(4))
-	#stereo = cv2.StereoBM_create(0,21)
-	thresh = 10
+	'''
+	anchor = twoD[0][0]
+	out = [][]
+	for i,row in enumerate(twoD):
+		for j,col in enumerate(row):
+			out[i][j] = col-anchor
+	return out
+	'''
+def main(inCL = None):
+	if inCL is None:
+		cl = CommandLine()
+	else :
+		cl = CommandLine(inCL)
+	imgName0 = 'frame0.jpg'
+	imgName1 = 'frame1.jpg'
+	#do video
+	#higher threshold = more black
+	thresh0 = 80
+	thresh1 = 0
 	point=[240,260]
-	saved = False
-	while(True):
-		if (not saved):
-			cv2.imwrite('frame0.jpg',frame0)
-			cv2.imwrite('frame1.jpg',frame1)
-			saved=True
-		# Capture frame-by-frame
-		#ret, frame = cap.read()
+	window = 5
+	offset = 0
+	offsetMult = 1
+	adjust = -25
+	c = 3
+	write_num = 1
+	matchDict = {}
+	if (cl.args.video):
+		print ('video')
+		cap0 = cv2.VideoCapture(0)
+		cap1 = cv2.VideoCapture(1)
+		#cap2 = cv2.VideoCapture(2)
 		ret0, frame0 = cap0.read()
+		assert ret0 # succeeds
 		ret1, frame1 = cap1.read()
-		# Our operations on the frame come here
-		gray0 = cv2.cvtColor(frame0, cv2.COLOR_BGR2GRAY)
-		gray1 = cv2.cvtColor(frame1, cv2.COLOR_BGR2GRAY)
-		#bounds = getSearchLine(point[0],point[1])
-		#print(bounds)
-		#frame0[point[0]][point[1]] = (255,255,255)
-		#rr,cc = line(round(bounds[0][0]),round(bounds[0][1]),round(bounds[1][0]-1),round(bounds[1][1]))
-		minDist = 255
-		minRow = -10
-		minCol = -10
-		'''
-		for i,row in enumerate(rr):
-			#print(row,cc[i])
-			#frame1[cc[i]][row] = (255,0,0)
+		assert ret1 # fails?!	
+		#ret2, frame2 = cap2.read()
+		#assert ret0 # succeeds	
+		while(True):	
+			ret0, frame0 = cap0.read()
+			ret1, frame1 = cap1.read()
+			gray0 = cv2.cvtColor(frame0, cv2.COLOR_BGR2GRAY)
+			gray1 = cv2.cvtColor(frame1, cv2.COLOR_BGR2GRAY)
+			#ret,thresh1 = cv.threshold(img,127,255,cv.THRESH_BINARY)
+			#thresh0+=.5
+			#thresh1+=1
+			#print(thresh1%255)
+			#retT0,gray0 = cv2.threshold(gray0,thresh0%255,255,cv2.THRESH_BINARY)
+			#retT1,gray1 = cv2.threshold(gray1,thresh1%255,255,cv2.THRESH_BINARY)
+			print(c%15)
+			gray0 = cv2.adaptiveThreshold(gray0,255,cv2.ADAPTIVE_THRESH_GAUSSIAN_C,cv2.THRESH_BINARY,11,c%15)
+			gray1 = cv2.adaptiveThreshold(gray1,255,cv2.ADAPTIVE_THRESH_GAUSSIAN_C,cv2.THRESH_BINARY,11,c%15)
+			#ret2, frame2 = cap2.read()
+			#gray2 = cv2.cvtColor(frame2, cv2.COLOR_BGR2GRAY)
+			#c+=.5
 
-			#print(dist(frame0[point[0]][point[1]][0], frame1[cc[i]][row][0],frame0[point[0]][point[1]][1], frame1[cc[i]][row][1],frame0[point[0]][point[1]][2], frame1[cc[i]][row][2]))
-			if (dist(frame0[point[0]][point[1]][0], frame1[cc[i]][row][0],frame0[point[0]][point[1]][1], frame1[cc[i]][row][1],frame0[point[0]][point[1]][2], frame1[cc[i]][row][2]) < minDist):
-				#print('dist match found!')
-				#print(dist(frame0[point[0]][point[1]][0], frame1[cc[i]][row][0],frame0[point[0]][point[1]][1], frame1[cc[i]][row][1],frame0[point[0]][point[1]][2], frame1[cc[i]][row][2]))
-				minDist = dist(frame0[point[0]][point[1]][0], frame1[cc[i]][row][0],frame0[point[0]][point[1]][1], frame1[cc[i]][row][1],frame0[point[0]][point[1]][2], frame1[cc[i]][row][2])
-				minRow = row
-				minCol = cc[i]
+			minDist = 255
+			minRow = -10
+			minCol = -10
+			
+			if (cl.args.all):
+				for row in range(0,480,window*2):
+					for col in range(0,640,window*2):
+						minPoint = 10000000000
+						minCol = -10
+						#temp = 1000
+						#print(sum(np.subtract(gray0[row:row+20,col:col+20],gray1[row:row+20,col:col+20])))
+						
+						for slideCol in range(0,640-window):
+
+							if (sum(sum(abs(np.subtract(gray0[point[0]:point[0]+window,point[1]:point[1]+window].astype(int)-gray0[point[0]][point[1]].astype(int),gray1[point[0]:point[0]+window,slideCol:slideCol+window].astype(int)-gray1[point[0]][minCol].astype(int) + offset)))) < minPoint):
+								minPoint = sum(sum(abs(np.subtract(gray0[point[0]:point[0]+window,point[1]:
+									point[1]+window].astype(int)-gray0[point[0]][point[1]].astype(int),
+									gray1[point[0]:point[0]+window,slideCol:slideCol+window].astype(int)-gray1[point[0]][minCol].astype(int) + offset))))
+								minCol = slideCol
+						#print('column', col)
+						#print('minPoint',minPoint)
+						#print('minCol', minCol)
+						#print(gray0[row:row+window,col:col+window]-gray0[0][0])
+						#print(gray1[row:row+window,minCol:minCol+window]-gray1[0][0])
+						gray0[row:row+window,col:col+window] = (row + col) * 255 / 1120
+						gray1[row:row+window,minCol:minCol+window] = (row + col) * 255 / 1120
+			elif(cl.args.load):
+				print('point')
+				print(gray0[point[0]:point[0]+window,point[1]:point[1]+window].astype(int)-gray0[point[0]][point[1]].astype(int))
+				print('line')
+				offsetArr = gray1[point[0]:point[0]+window,point[1]-adjust:point[1]-adjust+window].astype(int) * offsetMult + offset
+				#print(gray1[point[0]:point[0]+window,point[1]-adjust:point[1]-adjust+window].astype(int))
+				#print(offsetArr)
+				print(offsetArr-offsetArr[0][0])
+				#print(gray1[point[0]:point[0]+window,point[1]-adjust:point[1]-adjust+window].astype(int) + offset - gray1[point[0]][point[1]-adjust].astype(int))
+				gray0[point[0]:point[0]+window,point[1]:point[1]+window] = 120#(point[0] + point[1]) * 255 / 1120
+				gray1[point[0]:point[0]+window,point[1]-adjust:point[1]-adjust+window] = 120#(point[0] + col) * 255 / 1120
+				#gray1[point[0]:point[0]+10,point[1]-12:point[1]+10-12] = 255
+			else:
 				
-				#print(cc[i])
-				#print([row])
-		print(minRow)
-		print(minCol)
-		frame1[minCol][minRow] = (255,255,255)
-		frame0[point[0]][point[1]] = (255,255,255)
-		'''
-		#print(rr)
-			#if (abs(frame0[point[0]][point[1]][0] - frame1[cc[i]][row][0]) < thresh and abs(frame0[point[0]][point[1]][1] - frame1[cc[i]][row][1]) < thresh and abs(frame0[point[0]][point[1]][2] - frame1[cc[i]][row][2]) < thresh):
-			#	print('match found!')
-			#	frame1[cc[i]][row] = (255,255,255)
-		#print(rr)
-		#print(cc)
-		#show = np.asarray(gray1)
-		#print(show)
-		#print(len(show))
-		#show[rr][cc] = 255
-		#gray1[rr][cc] = 255
+				#print('single point')
+				for col in range(0,640,window):
+					minPoint = 10000000000
+					minCol = -10
+					#temp = 1000
+					#print(sum(np.subtract(gray0[row:row+20,col:col+20],gray1[row:row+20,col:col+20])))
+					for slideCol in range(0,640-window):
+						for DOF in range(-3,4):
 
-		#for row in range(0,480,4):
-		#	minPoint = 1000
-		#	minCol = -10
-		#	for col in range(0,640,4):
-		#		if (areaDist(frame0[row:row+4][col:col+4],frame1[[row:row+4][col:col+4]]) < minPoint):
-		#			minPoint = areaDist(frame0[row:row+4][col:col+4],frame1[[row:row+4][col:col+4]])
-		#			minCol = col
-		#	frame1[]
-		#if (areaDist(frame0[point[0]:point[0]+20,point[1]:point[1]+20],frame1[point[0]:point[0]+20,col:col+20]) < minPoint):
-		#	minPoint = areaDist(frame0[point[0]:point[0]+20,col:col+20],frame1[point[0]:point[0]+20,col:col+20])
-		#	minCol = col
-		for row in range(0,480,40):
-			for col in range(0,640,40):
+							if (point[0]+DOF >= 0 and point[0]+DOF <= 480 and sum(sum(abs(np.subtract(gray0[point[0]+DOF:point[0]+DOF+window,point[1]:point[1]+window].astype(int)-gray0[point[0]][point[1]].astype(int),gray1[point[0]:point[0]+window,slideCol:slideCol+window].astype(int) + offset - gray1[point[0]][minCol].astype(int))))) < minPoint):
+								minPoint = sum(sum(abs(np.subtract(gray0[point[0]+DOF:point[0]+DOF+window,point[1]:
+									point[1]+window].astype(int)-gray0[point[0]+DOF][point[1]].astype(int),
+									gray1[point[0]+DOF:point[0]+DOF+window,slideCol:slideCol+window].astype(int) + offset - gray1[point[0]+DOF][minCol].astype(int)))))
+								minCol = slideCol
+					#print('column', col)
+					#print('minPoint',minPoint)
+					#print('minCol', minCol)
+				#print('point')
+				#print(gray0[point[0]:point[0]+window,point[1]:point[1]+window])
+				#print('point')
+				#print(gray0[point[0]:point[0]+window,point[1]:point[1]+window].astype(int) - gray0[point[0]][point[1]].astype(int))
+				#print('line')
+				#print(gray1[point[0]:point[0]+window,minCol:minCol+window].astype(int) + offset - gray1[point[0]][minCol].astype(int))
+				#gray0[point[0]:point[0]+window,point[1]:point[1]+window] = 255#(point[0] + point[1]) * 255 / 1120
+				#gray1[point[0]:point[0]+window,minCol:minCol+window] = 255#(point[0] + col) * 255 / 1120
+				frame0[point[0]+DOF:point[0]+DOF+window,point[1]:point[1]+window] = 0,0,255#(point[0] + point[1]) * 255 / 1120
+				frame1[point[0]+DOF:point[0]+DOF+window,minCol:minCol+window] = 0,0,255#(point[0] + col) * 255 / 1120
+			cv2.imshow('pointGray',gray0)
+			cv2.imshow('lineGray', gray1)
+			cv2.imshow('point',frame0)
+			cv2.imshow('line', frame1)
+			#cv2.imshow('third',gray2)
+			# When everything done, release the capture
+			if cv2.waitKey(1) & 0xFF == ord('q'):
+				break
+	else:
+		print('reading from saved images')
+		print('loading',imgName0,'and',imgName1)
+		#for c in range(0,36):
+		#read images instead of video
+		frame0 = cv2.imread(imgName0)
+		frame1 = cv2.imread(imgName1)
+		gray0 = cv2.imread(imgName0,cv2.IMREAD_GRAYSCALE)
+		gray1 = cv2.imread(imgName1,cv2.IMREAD_GRAYSCALE)
+		gray0 = cv2.adaptiveThreshold(gray0,255,cv2.ADAPTIVE_THRESH_GAUSSIAN_C,cv2.THRESH_BINARY,11,c)
+		gray1 = cv2.adaptiveThreshold(gray1,255,cv2.ADAPTIVE_THRESH_GAUSSIAN_C,cv2.THRESH_BINARY,11,c)
+		#cv2.imshow('point',gray0)
+		#cv2.imshow('line', gray1)
+		cv2.waitKey(0)
+		cv2.destroyAllWindows()
+		print('starting matching')
+		print('c:',c)
+		for row in range(0,frame0.shape[0]):
+			print('Matching pixels on row',row)
+			for col in range(0,frame0.shape[1]):
 				minPoint = 10000000000
 				minCol = -10
+				minRow = -10
 				#temp = 1000
 				#print(sum(np.subtract(gray0[row:row+20,col:col+20],gray1[row:row+20,col:col+20])))
-				for slideCol in range(0,620):
-					if (sum(sum(abs(np.subtract(gray0[row:row+20,col:col+20],gray1[row:row+20,slideCol:slideCol+20])))) < minPoint):
-						minPoint = sum(sum(abs(np.subtract(gray0[row:row+20,col:col+20],gray1[row:row+20,slideCol:slideCol+20]))))
-						minCol = slideCol
+				for slideCol in range(0,frame0.shape[1]):
+					for DOF in range(0-int(window/2),1+int(window/2)):
+						print(max(row+DOF-window,0))
+						print(min(row+DOF+window,frame0.shape[1]))
+						print(max(col-window,0))
+						print(min(col+window,frame0.shape[1]))
+						print(max(row+DOF-window,0))
+						print(min(row+DOF+window,frame0.shape[1]))
+						print(max(slideCol-window,0))
+						print(min(slideCol+window,frame0.shape[1]))
+						print('\n')
+						print(col)
+						print(slideCol)
+						print('\n')
+						if (sum(
+								sum(
+									abs(
+										np.subtract(
+											gray0[max(row+DOF-window,0):min(row+DOF+window,frame0.shape[1]),max(col-window,0):min(col+window,frame0.shape[1])],
+											gray1[max(row+DOF-window,0):min(row+DOF+window,frame0.shape[1]),max(slideCol-window,0):min(slideCol+window,frame0.shape[1])])))) < minPoint):
+							
+							minPoint = sum(sum(abs(np.subtract(gray0[max(row+DOF-window,0):min(row+DOF+window,frame0.shape[1]),max(col-window,0):min(col+window,frame0.shape[1])], 
+								gray1[max(row+DOF-window,0):min(row+DOF+window,frame0.shape[1]),max(slideCol-window,0):min(slideCol+window,frame0.shape[1])]))))
+							minCol = slideCol
+							minRow = row+DOF
+				#print('row',minRow)
+				#print('DOF',minRow-row)
 				#print('column', col)
 				#print('minPoint',minPoint)
 				#print('minCol', minCol)
-				gray0[row:row+20,col:col+20] = (row + col) * 255 / 1120
-				gray1[row:row+20,minCol:minCol+20] = (row + col) * 255 / 1120
+
+				matchDict[str((row,col))] = [minRow,minCol]
+				if (int(realDistance(row+r,col+c,minRow+r,minCol+c)) > 0):
+					frame0[row][col] = ((int(realDistance(row,col,minRow,minCol)) * 255 / 300),0,0)#int(realDistance(firstRow[i],firstCol,minRow,minCol)) * 255/120)
+				else:
+					frame0[row][col] = (255,255,255)
+				#for r in range(0,window):
+					#for c in range(0,window):
+						#print('distance at',row+r,col+c,realDistance(row+r,col+c,minRow+r,minCol+c))
+						#print(firstRow[i],firstCol)
+						#print(realDistance(firstRow[i],firstCol,firstRow[i],minCol))
+						#if (realDistance(firstRow[i],firstCol,firstRow[i],minCol) < 150):
+						#gray0[firstRow[i]][firstCol] = int(realDistance(firstRow[i],firstCol,firstRow[i],minCol)) * 255/120
+						
+				'''
+				for i,firstRow in enumerate(gray0[row:row+window]):
+					for firstCol in firstRow[col:col+window]:
+						print('distance at',firstRow[i],firstCol,realDistance(firstRow[i],firstCol,minRow,minCol))
+						#print(firstRow[i],firstCol)
+						#print(realDistance(firstRow[i],firstCol,firstRow[i],minCol))
+						#if (realDistance(firstRow[i],firstCol,firstRow[i],minCol) < 150):
+						#gray0[firstRow[i]][firstCol] = int(realDistance(firstRow[i],firstCol,firstRow[i],minCol)) * 255/120
+						if (int(realDistance(firstRow[i],firstCol,minRow,minCol)) > 0):
+							frame0[firstRow[i]][firstCol] = (255/int(realDistance(firstRow[i],firstCol,minRow,minCol)),0,0)#int(realDistance(firstRow[i],firstCol,minRow,minCol)) * 255/120)
+						else:
+							frame0[firstRow[i]][firstCol] = (0,0,0)
+				'''
+				#gray0[row:row+window,col:col+window] = (row + col) * 255 / 1120
+				#gray1[row:row+window,minCol:minCol+window] = (row + col) * 255 / 1120
+				#gray0[row:row+window,col:col+window] = (row + col) * 255 / 1120
+				#gray1[minRow:minRow+window,minCol:minCol+window] = (minRow + minCol) * 255 / 1120
+				#frame0[row:row+window,col:col+window] = (row*255/480,0,col*255/640)
+				#frame1[minRow:minRow+window,minCol:minCol+window] = (minRow*255/480,0,minCol*255/640)
+		#cv2.imshow('pointGray',gray0)
+		#cv2.imshow('lineGray', gray1)
+		#cv2.imshow('point',frame0)
+		#cv2.imshow('line', frame1)
+		#cv2.imwrite('frame0'+str(c) + 'G.jpg',frame0)
+		if (cl.args.save):
+			cv2.imwrite(str(write_num) + 'distanceframe'+str(c)+'w'+str(window)+'.jpg',frame0)
+			#cv2.imwrite(str(write_num) + 'matchframe'+str(c)+'w'+str(window)+'.jpg',frame1)
+			#cv2.imwrite(str(write_num) + 'distancegray'+str(c)+'w'+str(window)+'.jpg',gray1)
+			#cv2.imshow('point',gray0)
+		if (cl.args.view):
+			cv2.imshow('pointGray',gray0)
+			cv2.imshow('lineGray', gray1)
+			cv2.imshow('point',frame0)
+			cv2.imshow('line', frame1)
+		cv2.waitKey(0)
+		cv2.destroyAllWindows()
+		with open(str(write_num) + imgName0 + '_' + imgName1 + '_' + 'w' + str(window) + '.json','w+') as f:
+			json.dump(matchDict,f,indent=4)
 
 
-		#gray1[point[0]:point[0]+10,point[1]-12:point[1]+10-12] = 255
-		cv2.imshow('point',gray0)
-		cv2.imshow('line', gray1)
-
-		
-
-
-		#orb = cv2.ORB_create()
-
-		#kp1, des1 = orb.detectAndCompute(gray0,None)
-		#kp2, des2 = orb.detectAndCompute(gray1,None)
-
-		# create BFMatcher object
-		#bf = cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck=True)
-		# Match descriptors.
-		#matches = bf.match(des1,des2)
-
-		# Sort them in the order of their distance.
-		#matches = sorted(matches, key = lambda x:x.distance)
-		#print(des1[matches[0].trainIdx])
-		# Draw first 10 matches.
-		#img3 = cv2.drawMatches(gray0,kp1,gray1,kp2,matches[:50],None,flags=cv2.DrawMatchesFlags_NOT_DRAW_SINGLE_POINTS)
-		#cv2.imshow('matches',img3)
-		#plt.imshow(img3),plt.show()
-		#out=[]
-		#disparity = stereo.compute(gray0,gray1)
-		#retval = stereo.getMinDisparity()
-		#print(retval)
-		#print(disparity)
-		#ret0,thresh0 = cv2.threshold(gray0,250,255,cv2.THRESH_BINARY)
-		#ret1,thresh1 = cv2.threshold(gray1,250,255,cv2.THRESH_BINARY)
-		# Display the resulting frame
-		#cv2.imshow('frame',frame0)
-		#cv2.imshow('frame1',frame1)
-		if cv2.waitKey(1) & 0xFF == ord('q'):
-			break
-
-
-	# When everything done, release the capture
-	cap0.release()
-	cap1.release()
-	cv2.destroyAllWindows()
+	
 if __name__ == '__main__':
 	main()
