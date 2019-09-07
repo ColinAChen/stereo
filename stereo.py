@@ -269,7 +269,7 @@ def main(inCL = None):
 	thresh0 = 80
 	thresh1 = 0
 	point=[240,260]
-	window = 5
+	window = 10
 	offset = 0
 	offsetMult = 1
 	adjust = -25
@@ -397,6 +397,7 @@ def main(inCL = None):
 		cv2.destroyAllWindows()
 		print('starting matching')
 		print('c:',c)
+		'''
 		for row in range(0,frame0.shape[0]):
 			print('Matching pixels on row',row)
 			for col in range(0,frame0.shape[1]):
@@ -430,14 +431,32 @@ def main(inCL = None):
 								gray1[max(row+DOF-window,0):min(row+DOF+window,frame0.shape[1]),max(slideCol-window,0):min(slideCol+window,frame0.shape[1])]))))
 							minCol = slideCol
 							minRow = row+DOF
+			'''
 				#print('row',minRow)
 				#print('DOF',minRow-row)
 				#print('column', col)
 				#print('minPoint',minPoint)
 				#print('minCol', minCol)
-
+		for row in range(window,frame0.shape[0]-window):
+			print('Matching pixels on row',row)
+			for col in range(window,frame0.shape[1]-window):
+				minPoint = 10000000000
+				minCol = -10
+				minRow = -10
+				#temp = 1000
+				#print(sum(np.subtract(gray0[row:row+20,col:col+20],gray1[row:row+20,col:col+20])))
+				for slideCol in range(0,frame0.shape[1]-window):
+					for DOF in range(0-int(window/2),1+int(window/2)):
+						if (sum(sum(abs(np.subtract(
+											gray0[row+DOF:row+DOF+window,col:col+window],
+											gray1[row+DOF:row+DOF+window,slideCol:slideCol+window])))) < minPoint):
+							
+							minPoint = sum(sum(abs(np.subtract(gray0[row+DOF:row+DOF+window,col:col+window],
+											gray1[row+DOF:row+DOF+window,slideCol:slideCol+window]))))
+							minCol = slideCol
+							minRow = row+DOF
 				matchDict[str((row,col))] = [minRow,minCol]
-				if (int(realDistance(row+r,col+c,minRow+r,minCol+c)) > 0):
+				if (int(realDistance(row,col,minRow,minCol)) > 0):
 					frame0[row][col] = ((int(realDistance(row,col,minRow,minCol)) * 255 / 300),0,0)#int(realDistance(firstRow[i],firstCol,minRow,minCol)) * 255/120)
 				else:
 					frame0[row][col] = (255,255,255)
