@@ -1,5 +1,7 @@
 import cv2
 import numpy as np
+import threading
+import time
 
 # for working with tuples of the form (row, col)
 ROW = 0
@@ -7,6 +9,11 @@ COL = 1
 
 INF = 1_000_000_000	# represents infinity
 DOF = 2			# number of pixels to search above or below corresponding row when matching pixels
+
+# stores matching points between frame0 and frame1
+matchDict = {}
+# stores threads for multithreading
+threads = []
 
 # takes tuple of two ints that has been cast to string and returns it as a tuple
 def tup(strInput):
@@ -48,21 +55,38 @@ def countBW(arr):
 # function searches for a matching point on frame1
 # dof is the degrees of freedom allowed to search away from the corresponding row
 def matchPixels(frame0, frame1, point, window, dof):
+	IMAGE_HEIGHT = frame0.shape[0]
+	IMAGE_WIDTH = frame0.shape[1]
+	if(point[ROW] < 0 or point[ROW] > IMAGE_HEIGHT):
+		return (-1, -1)
+	if(point[COL] < 0 or point[COL] > IMAGE_WIDTH):
+		return (-1, -1)
+
 	WIN_DEFAULT = 11
 	WIN_INC = 4
 	WIN_MIN_RATIO = 0.05
 	WIN_MIN_NUM_BW = INF
+
 	minDiff = INF
 	match = (-1, -1)
 
 	# increase window size until ratio of black to white pixels is acceptable
 	box0 = -1
+	topRow = -1
+	botRow = -1
+	lefCol = -1
+	rhtCol = -1
 	while(True):
 		halfWin = int(window/2)
-		box0 = frame0[point[ROW]-halfWin:point[ROW]+halfWin+1, point[COL]-halfWin:point[COL]+halfWin+1]
+		topRow = -1*halfWin if (point[ROW]-halfWin > 0) else -1*point[ROW]
+		botRow = halfWin+1 if (point[ROW]+halfWin+1 < IMAGE_HEIGHT) else IMAGE_HEIGHT-point[ROW]
+		lefCol = -1*halfWin if (point[COL]-halfWin > 0) else -1*point[COL]
+		rhtCol = halfWin+1 if (point[COL]+halfWin+1 < IMAGE_WIDTH) else IMAGE_WIDTH-point[COL]
+ 
+		box0 = frame0[point[ROW]+topRow:point[ROW]+botRow, point[COL]+lefCol:point[COL]+rhtCol]
 		
 		black, white = countBW(box0)
-		if(black == 0 or white == 0):			# all black or white
+		if(black == 0 or white == 0):
 			window += WIN_INC
 		elif(black/(black+white) > WIN_MIN_RATIO and white/(black+white) > WIN_MIN_RATIO):
 			break
@@ -76,33 +100,51 @@ def matchPixels(frame0, frame1, point, window, dof):
 		row = row + point[ROW]
 		# ignores pixels within half a window size from left and right sides
 		for col in range(halfWin+1, frame1.shape[1]-halfWin):
-			box1 = frame1[row-halfWin:row+halfWin+1, col-halfWin:col+halfWin+1]
+			box1 = frame1[row+topRow:row+botRow, col+lefCol:col+rhtCol]
 			boxDiff = sum2D(abs(np.subtract(box0.astype(int), box1.astype(int)))) / 255
 			if(boxDiff < minDiff):
 				minDiff = boxDiff
 				match = (row, col)
 
-	print("window size: ", window, ", minDiff: ", minDiff, sep="")
+	# print("window size: ", window, ", minDiff: ", minDiff, sep="")
 	return match
 
-def matchFrames(frame0, frame1, window, dof):
-	matchDict = {}
+def matchFrames(frame0, frame1, rowStart, rowEnd, colStart, colEnd, inc, window, dof, numThreads=0, threadID=None):
+	if(threadID != None):
+		print("starting thread", threads[threadID])
+	localDict = {}
 	numPixels = 0
+	
+	MAX_THREADS = frame0.shape[0]*frame0.shape[1]
+	if(numThreads > 0 and numThreads < frame0.shape[0]):
+		numRows = int((rowEnd-rowStart)/inc)
+		rpt = int(numRows/numThreads)
+		for i in range(numThreads):
+			rS = rowStart+(i*rpt*inc)
+			rE = rowStart+((i+1)*rpt*inc) if (i != numThreads-1) else rowEnd
+			
+			# was having issues overriding default value by name
+			thread_args = (frame0, frame1, rS, rE, colStart, colEnd, inc, window, dof, 0, i)
+			threads.append(threading.Thread(target=matchFrames, args=thread_args))
+			threads[i].start() 
+		return
 
 	# iterate through the frame
-	#for row in range(window/2+1, frame0.shape[0]-window/2):
-	for row in range(100, 321, 22):
-		#for col in range(window/2+1, frame0.shape[1]-window/2):
-		for col in range(100, 321, 22):
+	for row in range(rowStart, rowEnd, inc):
+		for col in range(colStart, colEnd, inc):
 			point = (row, col)
 			match = matchPixels(frame0, frame1, (row, col), window, dof)
-			matchDict[str(point)] = str(match)
+			localDict[str(point)] = str(match)
 			numPixels += 1
 
 			if(numPixels % 20 == 0):
-				print("Pixels completed:", numPixels)
+				print("Pixels completed:", numPixels)	
 
-	return matchDict		
+	if(threadID != None and threadID != 0):
+		threads[threadID-1].join()
+
+	for key in localDict:
+		matchDict[key] = localDict[key]
 
 def main():
 	frame0 = cv2.imread("frame0.jpg")
@@ -116,11 +158,18 @@ def main():
 	thresh0 = cv2.adaptiveThreshold(gray0, MAX_VAL, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, window, C)
 	thresh1 = cv2.adaptiveThreshold(gray1, MAX_VAL, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, window, C)
 	
-	matches = matchFrames(thresh0, thresh1, window, DOF)
+	# time multithreaded operation
+	start = time.perf_counter()
+	matchFrames(thresh0, thresh1, 100, 200, 100, 200, 22, window, DOF, 2)
+	if(len(threads) > 0):
+		threads[len(threads)-1].join()
+	end = time.perf_counter()
+	print("matching time:", end-start)
+
 	color = (0, 0, 5)
-	for key in matches:
+	for key in matchDict:
 		point0 = tup(key)
-		point1 = tup(matches[key])
+		point1 = tup(matchDict[key])
 		box0 = frame0[point0[ROW]-int(window/2):point0[ROW]+int(window/2)+1, point0[COL]-int(window/2):point0[COL]+int(window/2)+1]
 		box1 = frame1[point1[ROW]-int(window/2):point1[ROW]+int(window/2)+1, point1[COL]-int(window/2):point1[COL]+int(window/2)+1]
 		for row in box0:
@@ -130,9 +179,9 @@ def main():
 			for col in range(row.shape[0]):
 				row[col] = color
 
-		if(color[2] != 255):
+		if(color[2] != 255 and color[1] == 0 and color[0] == 0):
 			color = (color[0], color[1], color[2]+5)
-		elif(color[1] != 255):
+		elif(color[1] != 255 and color[2] == 255 and color[0] == 0):
 			color = (color[0], color[1]+5, color[2])
 		else:
 			color = (color[0]+5, color[1], color[2])
@@ -144,8 +193,8 @@ def main():
 	cv2.imshow("frame0", frame0)
 	cv2.imshow("frame1", frame1)
 
-	cv2.imwrite("frame0_0.05RATIO_OVER50.jpg", frame0)
-	cv2.imwrite("frame1_0.05RATIO_OVER50.jpg", frame1)
+	cv2.imwrite("frame0_thread_test2.jpg", frame0)
+	cv2.imwrite("frame1_thread_test2.jpg", frame1)
 
 	cv2.waitKey(0)
 
