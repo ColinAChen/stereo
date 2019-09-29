@@ -2,8 +2,8 @@ import cv2
 import numpy as np
 import multiprocessing
 import time
-
 import math
+
 #Real world cm height/width
 realWidth = .86808
 realHeight = .65106
@@ -174,6 +174,7 @@ def matchPixels(frame0, frame1, point, window, dof):
 	for row in range(-1*dof, dof+1):
 		row = row + point[ROW]
 		# ignores pixels within half a window size from left and right sides
+		# TODO: test if this can loop over all columns currently
 		for col in range(halfWin+1, frame1.shape[1]-halfWin):
 			box1 = frame1[row+topRow:row+botRow, col+lefCol:col+rhtCol]
 			boxDiff = sum2D(abs(np.subtract(box0.astype(int), box1.astype(int)))) / 255
@@ -231,7 +232,7 @@ def matchFrames(frame0, frame1, rowStart, rowEnd, colStart, colEnd, inc, window,
 	for row in range(rowStart, rowEnd, inc):
 		for col in range(colStart, colEnd, inc):
 			point = (row, col)
-			match = matchPixels(frame0, frame1, (row, col), window, dof)
+			match = matchPixels(frame0, frame1, point, window, dof)
 			localDict[str(point)] = str(match)
 			numPixels += 1
 
