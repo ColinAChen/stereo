@@ -419,7 +419,16 @@ def main():
 			global threads
 			threads = []
 	'''
-	test2()
+#	test2()
+
+	frame0 = cv2.imread("frame0.jpg", cv2.IMREAD_GRAYSCALE)
+	frame1 = cv2.imread("frame1.jpg", cv2.IMREAD_GRAYSCALE)
+	frame0 = cv2.adaptiveThreshold(frame0, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 11, 4)
+	frame1 = cv2.adaptiveThreshold(frame1, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 11, 4)
+
+	cv2.imshow("frame0", frame0)
+	cv2.imshow("frame1", frame1)
+	cv2.waitKey(0)
 
 if __name__ == '__main__':
 	main()
